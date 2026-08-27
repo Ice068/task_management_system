@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
 
-# 1. คลาส Task (ไม่เปลี่ยนแปลง)
+# 2.1 & 2.2: แก้ไข Class Task ให้มี priority และแสดงผลใน __str__
 class Task:
-    def __init__(self, task_id, description, due_date=None, completed=False):
+    # เพิ่มรับค่า priority (กำหนดค่าเริ่มต้นเป็น "medium")
+    def __init__(self, task_id, description, priority="medium", due_date=None, completed=False):
         self.id = task_id
         self.description = description
+        self.priority = priority # เพิ่ม Attribute priority
         self.due_date = due_date
         self.completed = completed
 
@@ -15,11 +17,11 @@ class Task:
     def __str__(self):
         status = "✔" if self.completed else " "
         due = f" (Due: {self.due_date})" if self.due_date else ""
-        return f"[{status}] {self.id}. {self.description}{due}"
+        # เพิ่มการแสดงผล priority
+        priority_str = f" [Priority: {self.priority.upper()}]"
+        return f"[{status}] {self.id}. {self.description}{priority_str}{due}"
 
-# 2. คลาสเกี่ยวกับ Storage (ย้ายขึ้นมาไว้ก่อน TaskManager เพื่อให้เรียกใช้ได้)
 class TaskStorage(ABC):
-    # แก้จาก abstractclassmethod เป็น abstractmethod (เป็นวิธีมาตรฐานใน Python)
     @abstractmethod 
     def load_tasks(self):
         pass
@@ -38,12 +40,22 @@ class FileTasksStorage(TaskStorage):
             with open(self.filename, "r") as f:
                 for line in f:
                     parts = line.strip().split(',')
-                    if len(parts) == 4:
+                    # ปรับปรุงให้รองรับข้อมูลทั้งแบบเก่า (4 ส่วน) และแบบใหม่ที่รวม priority แล้ว (5 ส่วน)
+                    if len(parts) >= 4:
                         task_id = int(parts[0])
                         description = parts[1]
-                        due_date = parts[2] if parts[2] != 'None' else None
-                        completed = parts[3] == 'True'
-                        loaded_tasks.append(Task(task_id, description, due_date, completed))
+                        
+                        # เช็คว่าไฟล์มี priority หรือไม่ (ถ้าเป็นไฟล์ใหม่จะมี 5 ส่วน)
+                        if len(parts) == 5:
+                            priority = parts[2]
+                            due_date = parts[3] if parts[3] != 'None' else None
+                            completed = parts[4] == 'True'
+                        else:
+                            priority = "medium" # ข้อมูลเก่าให้เป็น medium
+                            due_date = parts[2] if parts[2] != 'None' else None
+                            completed = parts[3] == 'True'
+                            
+                        loaded_tasks.append(Task(task_id, description, priority, due_date, completed))
         except FileNotFoundError:
             print(f"No existing task file '{self.filename}' found. Starting fresh.")
         return loaded_tasks
@@ -51,25 +63,26 @@ class FileTasksStorage(TaskStorage):
     def save_tasks(self, tasks):
         with open(self.filename, "w") as f:
             for task in tasks:
-                f.write(f"{task.id},{task.description},{task.due_date},{task.completed}\n")
+                # เพิ่ม task.priority ลงไปตอนเซฟไฟล์ด้วย
+                f.write(f"{task.id},{task.description},{task.priority},{task.due_date},{task.completed}\n")
         print(f"Tasks saved to {self.filename}")
 
-# 3. ปรับปรุง TaskManager (ตามรูปภาพ: รับ TaskStorage ผ่าน Parameter)
 class TaskManager:
-    def __init__(self, storage: TaskStorage): # รับ storage object เข้ามา
+    def __init__(self, storage: TaskStorage):
         self.storage = storage
-        self.tasks = self.storage.load_tasks() # โหลดข้อมูลทันที
+        self.tasks = self.storage.load_tasks()
         
-        # คำนวณหา ID ล่าสุด
         self.next_id = max([t.id for t in self.tasks] + [0]) + 1 if self.tasks else 1
         print(f"Loaded {len(self.tasks)} tasks. Next ID: {self.next_id}")
 
-    def add_task(self, description, due_date=None):
-        task = Task(self.next_id, description, due_date)
+    # 2.3: แก้ไข add_task ให้รับค่า priority
+    def add_task(self, description, priority="medium", due_date=None):
+        # ส่ง priority เข้าไปตอนสร้าง Task
+        task = Task(self.next_id, description, priority, due_date)
         self.tasks.append(task)
         self.next_id += 1
-        self.storage.save_tasks(self.tasks) # Save หลักจาก Add (ตามรูปภาพ)
-        print(f"Task '{description}' added.")
+        self.storage.save_tasks(self.tasks)
+        print(f"Task '{description}' (Priority: {priority}) added.")
         return task
 
     def list_tasks(self):
@@ -91,22 +104,18 @@ class TaskManager:
         task = self.get_task_by_id(task_id)
         if task:
             task.mark_completed()
-            self.storage.save_tasks(self.tasks) # Save หลังจาก Mark (ตามรูปภาพ)
+            self.storage.save_tasks(self.tasks)
             return True
         print(f"Task {task_id} not found.")
         return False
 
-# 4. Logic หลัก (นำมารวมไว้ด้านล่างสุดและปรับปรุงตามรูปภาพ)
+# ทดสอบ Logic หลัก
 if __name__ == "__main__":
-    # สร้าง Object สำหรับจัดการไฟล์
     file_storage = FileTasksStorage("my_tasks.txt")
-    
-    # ส่ง Object เข้าไปใน TaskManager (Dependency Injection)
     manager = TaskManager(file_storage)
     
-    manager.list_tasks()
-    manager.add_task("Review SOLID Principles", "2024-08-10")
-    manager.add_task("Prepare for Final Exam", "2024-08-15")
-    manager.list_tasks()
-    manager.mark_task_completed(1)
+    # ทดลองสร้าง Task แบบกำหนด Priority
+    manager.add_task("Review SOLID Principles", priority="high", due_date="2024-08-10")
+    manager.add_task("Prepare for Final Exam", priority="medium", due_date="2024-08-15")
+    manager.add_task("Buy groceries", priority="low") # ไม่ใส่ due_date
     manager.list_tasks()
