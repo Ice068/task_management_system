@@ -119,3 +119,5 @@ if __name__ == "__main__":
     manager.add_task("Prepare for Final Exam", priority="medium", due_date="2024-08-15")
     manager.add_task("Buy groceries", priority="low") # ไม่ใส่ due_date
     manager.list_tasks()
+
+    print("Finshed")
